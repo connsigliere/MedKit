@@ -58,7 +58,11 @@ end)
 
 -- Heal self function
 function HealSelf()
+    print("[VORP Medkit] HealSelf function called")
+
     local playerPed = PlayerPedId()
+    print("[VORP Medkit] PlayerPed: " .. tostring(playerPed))
+
     local currentHealth = GetEntityHealth(playerPed)
     local maxHealth = GetEntityMaxHealth(playerPed)
 
@@ -70,76 +74,62 @@ function HealSelf()
         return
     end
 
-    -- DISABLE interrupts during healing
-    local allowInterrupt = false
-    isUsingMedkit = true
+    print("[VORP Medkit] Starting instant heal (no animation for testing)...")
 
-    -- Clear any previous damage flags
-    ClearEntityLastDamageEntity(playerPed)
-
-    -- Notify start of healing
-    Notify(Config.ProgressBar["healing"], "left", Config.HealTime)
-    print("[VORP Medkit] Starting heal process...")
-
-    -- Play animation
-    local dict = "amb_rest_drunk@world_human_drinking@coffee@male@idle_a"
-    RequestAnimDict(dict)
-    while not HasAnimDictLoaded(dict) do
-        Citizen.Wait(100)
-    end
-    TaskPlayAnim(playerPed, dict, "idle_a", 1.0, 8.0, -1, 1, 0, false, false, false)
-
-    print("[VORP Medkit] Animation started, waiting " .. Config.HealTime .. "ms...")
-
-    -- Wait for healing time
-    Citizen.Wait(Config.HealTime)
-
-    print("[VORP Medkit] Wait completed. isUsingMedkit = " .. tostring(isUsingMedkit))
-
-    -- Re-enable interrupts
-    allowInterrupt = true
-
-    -- Always apply healing (ignore interrupt check for now to debug)
-    -- Calculate percentage heal
+    -- Calculate heal amount
     local healthToAdd = (maxHealth / 100) * Config.HealAmount
     local newHealth = math.min(currentHealth + healthToAdd, maxHealth)
 
-    print("[VORP Medkit] Attempting to heal: " .. currentHealth .. " -> " .. newHealth)
+    print("[VORP Medkit] Will heal from " .. currentHealth .. " to " .. newHealth)
 
-    -- Try multiple methods to set health
-    -- Method 1: Standard SetEntityHealth
+    -- INSTANT HEAL - Try all methods
+    -- Method 1: Basic SetEntityHealth
+    print("[VORP Medkit] Trying SetEntityHealth...")
     SetEntityHealth(playerPed, math.floor(newHealth))
-    Citizen.Wait(100)
-    local healthCheck1 = GetEntityHealth(playerPed)
-    print("[VORP Medkit] After SetEntityHealth: " .. healthCheck1)
+    Citizen.Wait(50)
+    print("[VORP Medkit] Health after method 1: " .. GetEntityHealth(playerPed))
 
-    -- Method 2: RedM native _SET_ENTITY_HEALTH
+    -- Method 2: RedM specific native
+    print("[VORP Medkit] Trying RedM native...")
     Citizen.InvokeNative(0xC6258F41D86676E0, playerPed, 0, math.floor(newHealth))
-    Citizen.Wait(100)
-    local healthCheck2 = GetEntityHealth(playerPed)
-    print("[VORP Medkit] After Native 0xC6258F41D86676E0: " .. healthCheck2)
+    Citizen.Wait(50)
+    print("[VORP Medkit] Health after method 2: " .. GetEntityHealth(playerPed))
 
-    -- Method 3: Try ADD_ATTRIBUTE_POINTS (RedM health core)
-    Citizen.InvokeNative(0xF6A7C08DF2E28B28, playerPed, 0, math.floor(healthToAdd))
-    Citizen.Wait(100)
-    local healthCheck3 = GetEntityHealth(playerPed)
-    print("[VORP Medkit] After ADD_ATTRIBUTE_POINTS: " .. healthCheck3)
+    -- Method 3: Health core regeneration
+    print("[VORP Medkit] Trying health core regen...")
+    Citizen.InvokeNative(0xC6258F41D86676E0, playerPed, 0, 600) -- Set to max
+    Citizen.InvokeNative(0xF6A7C08DF2E28B28, playerPed, 0, 1000) -- Add to health core
+    Citizen.InvokeNative(0x4AF5A4C7B9157D14, playerPed, 0, 5000.0) -- _FORTIFY_PED_ATTRIBUTE
+    Citizen.Wait(50)
+    print("[VORP Medkit] Health after method 3: " .. GetEntityHealth(playerPed))
 
-    -- Clear animation
-    ClearPedTasks(playerPed)
-
-    -- Notify player
-    Notify(Config.Lang["medkit_used"], "right")
-    print("[VORP Medkit] Healing complete! Final HP: " .. GetEntityHealth(playerPed))
-
-    -- Remove item and start cooldown
-    TriggerServerEvent('vorp_medkit:server:removeItem')
-
-    if Config.UseCooldown then
-        StartCooldown()
+    -- Method 4: Using VORP if available
+    if VORPcore then
+        print("[VORP Medkit] Trying VORP method...")
+        local User = VORPcore.getUser(PlayerId())
+        if User then
+            local Character = User.getUsedCharacter
+            if Character then
+                print("[VORP Medkit] Have VORP character, setting HP...")
+                -- Try VORP's method if it exists
+            end
+        end
     end
 
-    isUsingMedkit = false
+    local finalHealth = GetEntityHealth(playerPed)
+    print("[VORP Medkit] FINAL HEALTH: " .. finalHealth)
+
+    -- Notify player
+    if finalHealth > currentHealth then
+        Notify("Health increased to " .. finalHealth, "right")
+    else
+        Notify("WARNING: Health did NOT increase! Still at " .. finalHealth, "left")
+    end
+
+    -- Remove item
+    TriggerServerEvent('vorp_medkit:server:removeItem')
+
+    print("[VORP Medkit] HealSelf complete")
 end
 
 -- Revive nearby player function
