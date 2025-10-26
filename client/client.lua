@@ -70,9 +70,11 @@ function HealSelf()
         return
     end
 
+    -- DISABLE interrupts during healing
+    local allowInterrupt = false
     isUsingMedkit = true
 
-    -- Clear any previous damage flags to prevent false interrupts
+    -- Clear any previous damage flags
     ClearEntityLastDamageEntity(playerPed)
 
     -- Notify start of healing
@@ -87,41 +89,54 @@ function HealSelf()
     end
     TaskPlayAnim(playerPed, dict, "idle_a", 1.0, 8.0, -1, 1, 0, false, false, false)
 
+    print("[VORP Medkit] Animation started, waiting " .. Config.HealTime .. "ms...")
+
     -- Wait for healing time
     Citizen.Wait(Config.HealTime)
 
     print("[VORP Medkit] Wait completed. isUsingMedkit = " .. tostring(isUsingMedkit))
 
-    -- Check if player moved or got interrupted
-    if isUsingMedkit then
-        -- Apply healing - RedM uses different health scale (600 is max typically)
-        -- Calculate percentage heal
-        local healthToAdd = (maxHealth / 100) * Config.HealAmount
-        local newHealth = math.min(currentHealth + healthToAdd, maxHealth)
+    -- Re-enable interrupts
+    allowInterrupt = true
 
-        print("[VORP Medkit] Healing: " .. currentHealth .. " -> " .. newHealth)
+    -- Always apply healing (ignore interrupt check for now to debug)
+    -- Calculate percentage heal
+    local healthToAdd = (maxHealth / 100) * Config.HealAmount
+    local newHealth = math.min(currentHealth + healthToAdd, maxHealth)
 
-        SetEntityHealth(playerPed, math.floor(newHealth))
+    print("[VORP Medkit] Attempting to heal: " .. currentHealth .. " -> " .. newHealth)
 
-        -- Also use native for RedM
-        Citizen.InvokeNative(0xC6258F41D86676E0, playerPed, 0, math.floor(newHealth))
+    -- Try multiple methods to set health
+    -- Method 1: Standard SetEntityHealth
+    SetEntityHealth(playerPed, math.floor(newHealth))
+    Citizen.Wait(100)
+    local healthCheck1 = GetEntityHealth(playerPed)
+    print("[VORP Medkit] After SetEntityHealth: " .. healthCheck1)
 
-        -- Clear animation
-        ClearPedTasks(playerPed)
+    -- Method 2: RedM native _SET_ENTITY_HEALTH
+    Citizen.InvokeNative(0xC6258F41D86676E0, playerPed, 0, math.floor(newHealth))
+    Citizen.Wait(100)
+    local healthCheck2 = GetEntityHealth(playerPed)
+    print("[VORP Medkit] After Native 0xC6258F41D86676E0: " .. healthCheck2)
 
-        -- Notify player
-        Notify(Config.Lang["medkit_used"], "right")
-        print("[VORP Medkit] Healed successfully!")
+    -- Method 3: Try ADD_ATTRIBUTE_POINTS (RedM health core)
+    Citizen.InvokeNative(0xF6A7C08DF2E28B28, playerPed, 0, math.floor(healthToAdd))
+    Citizen.Wait(100)
+    local healthCheck3 = GetEntityHealth(playerPed)
+    print("[VORP Medkit] After ADD_ATTRIBUTE_POINTS: " .. healthCheck3)
 
-        -- Remove item and start cooldown
-        TriggerServerEvent('vorp_medkit:server:removeItem')
+    -- Clear animation
+    ClearPedTasks(playerPed)
 
-        if Config.UseCooldown then
-            StartCooldown()
-        end
-    else
-        Notify(Config.Lang["canceled"], "left")
-        print("[VORP Medkit] Healing canceled")
+    -- Notify player
+    Notify(Config.Lang["medkit_used"], "right")
+    print("[VORP Medkit] Healing complete! Final HP: " .. GetEntityHealth(playerPed))
+
+    -- Remove item and start cooldown
+    TriggerServerEvent('vorp_medkit:server:removeItem')
+
+    if Config.UseCooldown then
+        StartCooldown()
     end
 
     isUsingMedkit = false
