@@ -1,33 +1,54 @@
-local VORPcore = {}
+local VORPcore = nil
 local isOnCooldown = false
 local isUsingMedkit = false
 
 -- Initialize VORP Core
-TriggerEvent("getCore", function(core)
-    VORPcore = core
+Citizen.CreateThread(function()
+    while VORPcore == nil do
+        TriggerEvent("getCore", function(core)
+            VORPcore = core
+        end)
+        Citizen.Wait(200)
+    end
+    print("[VORP Medkit] Core initialized successfully")
 end)
+
+-- Notification helper
+function Notify(message, type, duration)
+    if type == "left" then
+        TriggerEvent("vorp:NotifyLeft", message, duration or 3000)
+    else
+        TriggerEvent("vorp:NotifyRight", message, duration or 3000)
+    end
+end
 
 -- Register usable item
 RegisterNetEvent('vorp_medkit:client:useMedkit')
 AddEventHandler('vorp_medkit:client:useMedkit', function()
+    print("[VORP Medkit] Item used!")
+
     if isUsingMedkit then
+        print("[VORP Medkit] Already using medkit")
         return
     end
 
     if Config.UseCooldown and isOnCooldown then
-        VORPcore.NotifyTip(Config.Lang["on_cooldown"], 3000)
+        Notify(Config.Lang["on_cooldown"], "left")
+        print("[VORP Medkit] On cooldown")
         return
     end
 
     local playerPed = PlayerPedId()
     local isDead = Citizen.InvokeNative(0x3317DEDB88C95038, playerPed) -- IsPedDeadOrDying
 
+    print("[VORP Medkit] Is player dead: " .. tostring(isDead))
+
     if isDead then
         -- Player is dead, try to revive nearby player
         if Config.ReviveEnabled then
             ReviveNearbyPlayer()
         else
-            VORPcore.NotifyTip(Config.Lang["no_players"], 3000)
+            Notify(Config.Lang["no_players"], "left")
         end
     else
         -- Player is alive, heal yourself
@@ -41,15 +62,19 @@ function HealSelf()
     local currentHealth = GetEntityHealth(playerPed)
     local maxHealth = GetEntityMaxHealth(playerPed)
 
+    print("[VORP Medkit] Current Health: " .. currentHealth .. " / Max Health: " .. maxHealth)
+
     if currentHealth >= maxHealth then
-        VORPcore.NotifyTip(Config.Lang["already_healthy"], 3000)
+        Notify(Config.Lang["already_healthy"], "left")
+        print("[VORP Medkit] Already at full health")
         return
     end
 
     isUsingMedkit = true
 
-    -- Start progress bar
-    VORPcore.NotifyTip(Config.ProgressBar["healing"], Config.HealTime)
+    -- Notify start of healing
+    Notify(Config.ProgressBar["healing"], "left", Config.HealTime)
+    print("[VORP Medkit] Starting heal process...")
 
     -- Play animation
     local dict = "amb_rest_drunk@world_human_drinking@coffee@male@idle_a"
@@ -64,15 +89,24 @@ function HealSelf()
 
     -- Check if player moved or got interrupted
     if isUsingMedkit then
-        -- Apply healing
-        local newHealth = math.min(currentHealth + Config.HealAmount, maxHealth)
-        SetEntityHealth(playerPed, newHealth)
+        -- Apply healing - RedM uses different health scale (600 is max typically)
+        -- Calculate percentage heal
+        local healthToAdd = (maxHealth / 100) * Config.HealAmount
+        local newHealth = math.min(currentHealth + healthToAdd, maxHealth)
+
+        print("[VORP Medkit] Healing: " .. currentHealth .. " -> " .. newHealth)
+
+        SetEntityHealth(playerPed, math.floor(newHealth))
+
+        -- Also use native for RedM
+        Citizen.InvokeNative(0xC6258F41D86676E0, playerPed, 0, math.floor(newHealth))
 
         -- Clear animation
         ClearPedTasks(playerPed)
 
         -- Notify player
-        VORPcore.NotifyTip(Config.Lang["medkit_used"], 3000)
+        Notify(Config.Lang["medkit_used"], "right")
+        print("[VORP Medkit] Healed successfully!")
 
         -- Remove item and start cooldown
         TriggerServerEvent('vorp_medkit:server:removeItem')
@@ -81,7 +115,8 @@ function HealSelf()
             StartCooldown()
         end
     else
-        VORPcore.NotifyTip(Config.Lang["canceled"], 3000)
+        Notify(Config.Lang["canceled"], "left")
+        print("[VORP Medkit] Healing canceled")
     end
 
     isUsingMedkit = false
@@ -111,14 +146,14 @@ function ReviveNearbyPlayer()
     end
 
     if closestPlayer == nil then
-        VORPcore.NotifyTip(Config.Lang["no_players"], 3000)
+        Notify(Config.Lang["no_players"], "left")
         return
     end
 
     isUsingMedkit = true
 
     -- Start progress bar
-    VORPcore.NotifyTip(Config.ProgressBar["reviving"], Config.ReviveTime)
+    Notify(Config.ProgressBar["reviving"], "left", Config.ReviveTime)
 
     -- Play animation
     local dict = "amb_work@world_human_box_pickup@1@male_a@stand_exit_withprop"
@@ -144,7 +179,7 @@ function ReviveNearbyPlayer()
         TriggerServerEvent('vorp_medkit:server:revivePlayer', targetServerId)
 
         -- Notify
-        VORPcore.NotifyTip(Config.Lang["revived"], 3000)
+        Notify(Config.Lang["revived"], "right")
 
         -- Remove item and start cooldown
         TriggerServerEvent('vorp_medkit:server:removeItem')
@@ -153,7 +188,7 @@ function ReviveNearbyPlayer()
             StartCooldown()
         end
     else
-        VORPcore.NotifyTip(Config.Lang["canceled"], 3000)
+        Notify(Config.Lang["canceled"], "left")
         ClearPedTasks(playerPed)
     end
 
@@ -177,14 +212,16 @@ AddEventHandler('vorp_medkit:client:revive', function()
     local coords = GetEntityCoords(playerPed)
     NetworkResurrectLocalPlayer(coords.x, coords.y, coords.z, GetEntityHeading(playerPed), true, false)
 
-    -- Set health
-    SetEntityHealth(playerPed, Config.ReviveHealth)
+    -- Set health (calculate based on max health percentage)
+    local maxHealth = GetEntityMaxHealth(playerPed)
+    local reviveHealth = (maxHealth / 100) * Config.ReviveHealth
+    SetEntityHealth(playerPed, math.floor(reviveHealth))
 
     -- Clear any death effects
     ClearPedBloodDamage(playerPed)
 
     -- Notify
-    VORPcore.NotifyTip(Config.Lang["got_revived"], 5000)
+    Notify(Config.Lang["got_revived"], "right", 5000)
 end)
 
 -- Cancel action if player moves too much or takes damage
