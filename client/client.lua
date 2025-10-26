@@ -72,6 +72,9 @@ function HealSelf()
 
     isUsingMedkit = true
 
+    -- Clear any previous damage flags to prevent false interrupts
+    ClearEntityLastDamageEntity(playerPed)
+
     -- Notify start of healing
     Notify(Config.ProgressBar["healing"], "left", Config.HealTime)
     print("[VORP Medkit] Starting heal process...")
@@ -86,6 +89,8 @@ function HealSelf()
 
     -- Wait for healing time
     Citizen.Wait(Config.HealTime)
+
+    print("[VORP Medkit] Wait completed. isUsingMedkit = " .. tostring(isUsingMedkit))
 
     -- Check if player moved or got interrupted
     if isUsingMedkit then
@@ -233,7 +238,11 @@ Citizen.CreateThread(function()
             local playerPed = PlayerPedId()
 
             -- Check if player is in combat or taking damage
-            if IsPedInMeleeCombat(playerPed) or HasEntityBeenDamagedByAnyPed(playerPed) then
+            local inCombat = IsPedInMeleeCombat(playerPed)
+            local takenDamage = HasEntityBeenDamagedByAnyPed(playerPed)
+
+            if inCombat or takenDamage then
+                print("[VORP Medkit] INTERRUPTED! Combat: " .. tostring(inCombat) .. ", Damage: " .. tostring(takenDamage))
                 isUsingMedkit = false
                 ClearPedTasks(playerPed)
             end
