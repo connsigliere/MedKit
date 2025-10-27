@@ -15,31 +15,22 @@ end)
 Citizen.CreateThread(function()
     Citizen.Wait(2000)
 
-    print("[VORP Medkit] Registering usable item: " .. Config.MedkitItem)
-
     -- Register medkit as usable item
     local VORPInv = exports.vorp_inventory:vorp_inventoryApi()
 
     VORPInv.RegisterUsableItem(Config.MedkitItem, function(data)
         local source = data.source
-        print("[VORP Medkit] Player " .. source .. " used medkit")
 
         if VORPcore then
             local User = VORPcore.getUser(source)
-
             if User then
-                print("[VORP Medkit] User found, triggering client event")
                 -- Trigger client event to use medkit
                 TriggerClientEvent('vorp_medkit:client:useMedkit', source)
-            else
-                print("[VORP Medkit] ERROR: User not found for source " .. source)
             end
-        else
-            print("[VORP Medkit] ERROR: VORPcore not initialized")
         end
     end)
 
-    print("[VORP Medkit] Item registered successfully")
+    print("[VORP Medkit] Resource loaded successfully")
 end)
 
 -- Remove item from inventory
@@ -47,22 +38,31 @@ RegisterNetEvent('vorp_medkit:server:removeItem')
 AddEventHandler('vorp_medkit:server:removeItem', function()
     local _source = source
 
-    print("[VORP Medkit] Attempting to remove item from player " .. _source)
-
     if Config.RemoveOnUse then
         local VORPInv = exports.vorp_inventory:vorp_inventoryApi()
         local itemCount = VORPInv.getItemCount(_source, Config.MedkitItem)
 
-        print("[VORP Medkit] Player has " .. itemCount .. " medkits")
-
         if itemCount > 0 then
             VORPInv.subItem(_source, Config.MedkitItem, 1)
-            print("[VORP Medkit] Removed 1 medkit from player " .. _source)
-        else
-            print("[VORP Medkit] No medkit to remove from player " .. _source)
         end
+    end
+end)
+
+-- Check if player has medkit before revive
+RegisterNetEvent('vorp_medkit:server:checkMedkitForRevive')
+AddEventHandler('vorp_medkit:server:checkMedkitForRevive', function(targetId)
+    local _source = source
+
+    -- Check if player has medkit
+    local VORPInv = exports.vorp_inventory:vorp_inventoryApi()
+    local itemCount = VORPInv.getItemCount(_source, Config.MedkitItem)
+
+    if itemCount > 0 then
+        -- Player has medkit, proceed with revive
+        TriggerClientEvent('vorp_medkit:client:reviveWithMedkit', _source, targetId)
     else
-        print("[VORP Medkit] RemoveOnUse is disabled")
+        -- Player doesn't have medkit
+        TriggerClientEvent('vorp:TipLeft', _source, 'You need a medkit to revive players', 3000)
     end
 end)
 
@@ -76,7 +76,7 @@ AddEventHandler('vorp_medkit:server:revivePlayer', function(targetId)
         -- Trigger revive on target client
         TriggerClientEvent('vorp_medkit:client:revive', targetId)
 
-        -- Log for admin purposes (optional)
+        -- Log for admin purposes
         print(string.format("[VORP Medkit] Player %s revived player %s", GetPlayerName(_source), GetPlayerName(targetId)))
     end
 end)

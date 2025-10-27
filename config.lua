@@ -31,7 +31,8 @@ Config.Lang = {
     ["player_not_dead"] = "This player is not injured",
     ["too_far"] = "Player is too far away",
     ["on_cooldown"] = "You must wait before using another medkit",
-    ["canceled"] = "Action canceled"
+    ["canceled"] = "Action canceled",
+    ["cannot_use_dead"] = "You cannot use a medkit while dead"
 }
 
 -- Progress bar text
